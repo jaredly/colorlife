@@ -146,7 +146,7 @@ const makeBoard = (w, h) => {
     for (let y = 0; y < h; y++) {
         cells.push([]);
         for (let x = 0; x < w; x++) {
-            cells[cells.length - 1].push({ hue: Math.random() * 360, life: 0, drop: 0 });
+            cells[cells.length - 1].push({ hue: Math.random() * 360, life: 0, drop: -1 });
         }
     }
     return cells;
@@ -159,7 +159,9 @@ const draw = (ctx, mode, margin, cells, scale, w, h, mdrop) => {
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const v = cells[y][x];
-            if (v.life == 0) {
+            if (v.drop === -1) {
+                ctx.fillStyle = `black`;
+            } else if (v.life !== 1) {
                 // const mdrop = 20;
                 const dmin = +dropMin.value;
                 const dmax = +dropMax.value;
@@ -196,7 +198,7 @@ const neighbors = (mode, board, x, y, w, h, mutateMin, mutateMax) => {
     const cell = board[y][x];
     const live = mode.liveness(cell.life, count);
     if (!live) {
-        return { hue: cell.hue, life: 0, drop: cell.drop + 1 };
+        return { hue: cell.hue, life: 0, drop: cell.drop === -1 ? -1 : cell.drop + 1 };
     }
     if (cell.life) {
         return cell; // stable
@@ -306,7 +308,7 @@ const scale = range('scale', 1, 80, 80);
 const mutateMin = range('mutate min', 0, 360, 0);
 const mutateMax = range('mutate max', 0, 360, 30);
 const speed = range('speed', 30, 300, 30);
-const seed = range('seed', 0, 1, 0.3, 0.1);
+const seed = range('seed', 0, 1, 0.3, 0.01);
 const mdrop = range('dropoff steps', 0, 200, 20);
 const dropMin = range('dropoff min', 0, 50, 10);
 const dropMax = range('dropoff max', 0, 50, 20);
