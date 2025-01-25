@@ -6,7 +6,7 @@ const hexpoints = [];
 for (let i = 0; i < 6; i++) {
     const t = ((Math.PI * 2) / 6) * i + Math.PI / 2;
     const off = 1 / Math.sqrt(3);
-    hexpoints.push([Math.cos(t) * off + off, Math.sin(t) * off + off]);
+    hexpoints.push([Math.cos(t) * off + 0.5, Math.sin(t) * off + off]);
 }
 
 const hexagons = () => {
@@ -29,6 +29,8 @@ const hexagons = () => {
 
     return {
         xs: 1 * sq3,
+        w: (w, scale) => scale * sq3 * (w + 0.5),
+        h: (h, scale) => scale * (h + 1 / 3),
         // ys: 1,
         cellAt,
         neighborCells,
@@ -45,12 +47,15 @@ const circles = () => {
         if (y % 2 === 1) x += xs / 2;
         y *= scale;
         ctx.beginPath();
-        ctx.ellipse(x + scale / 2, y + scale / 2, scale / 2, scale / 2, 0, 0, Math.PI * 2);
+        ctx.ellipse(x + xs / 2, y + xs / 2, xs / 2, xs / 2, 0, 0, Math.PI * 2);
         ctx.fill();
     };
 
     return {
         xs: 1 * sq3,
+        // w: (w, scale) => w * scale,
+        w: (w, scale) => scale * sq3 * (w + 0.5),
+        h: (h, scale) => scale * (h + 1 / 6),
         // ys: 1,
         cellAt,
         neighborCells,
@@ -58,15 +63,18 @@ const circles = () => {
     };
 };
 
-const tris = (SYMM) => {
+const tris = (SYMM, FLIPRIGHT) => {
     const sq3 = 2 / Math.sqrt(3);
 
     const cellAt = (ctx, x, y, scale) => {
         const xs = scale * sq3;
 
-        let flip = x % 2 == 1;
+        let flip = x % 2 == (FLIPRIGHT ? (y % 2 == 0 ? 1 : 0) : 1);
         x *= xs / 2;
         if (!flip) x += xs / 2;
+        if (FLIPRIGHT && y % 2 == 1) {
+            x -= xs / 2;
+        }
         if (!SYMM) {
             if (y % 2 === 1) x += xs / 2;
         }
@@ -86,6 +94,8 @@ const tris = (SYMM) => {
     return {
         xw: (1 / 2) * sq3,
         xs: 2 * sq3,
+        w: (w, scale) => (w / 2 + (FLIPRIGHT || SYMM ? 0.5 : 1)) * sq3 * scale,
+        h: (h, scale) => scale * h,
         // ys: 1,
         cellAt,
         neighborCells,
@@ -122,6 +132,8 @@ const liveness = (self, count) => {
 
 const conway = {
     xs: 1,
+    w: (w, scale) => w * scale,
+    h: (h, scale) => scale * h,
     // ys: 1,
     cellAt,
     neighborCells,
@@ -327,12 +339,13 @@ const ival = { current: null };
 const modes = {
     conway,
     triangles: tris(false),
+    trianglesFlip: tris(false, true),
     trianglesOff: tris(true),
     circles: circles(),
     hexagons: hexagons(),
 };
 
-let mode = modes.hexagons;
+let mode = modes.triangles;
 
 const HEIGHT = 1000;
 
@@ -342,14 +355,16 @@ const go = () => {
     const margin = 100;
     const w = (((HEIGHT - margin * 2) / scale.value) * mode.xs) | 0;
     const h = ((HEIGHT - margin * 2) / scale.value) | 0;
-    const FH = h * scale.value + margin * 2;
-    ctx.canvas.width = (FH / h) * w * (mode.xw ?? mode.xs);
+    const FH = mode.h(h, +scale.value) + margin * 2;
+    const FW = mode.w(w, +scale.value) + margin * 2;
+    ctx.canvas.width = FW;
     ctx.canvas.height = FH;
     ctx.canvas.style.width = ctx.canvas.width / 2 + 'px';
+    ctx.canvas.style.height = ctx.canvas.height / 2 + 'px';
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    ctx.strokeStyle = 'white';
-    ctx.strokeRect(margin, margin, ctx.canvas.width - margin * 2, ctx.canvas.height - margin * 2);
+    // ctx.strokeStyle = 'white';
+    // ctx.strokeRect(margin, margin, ctx.canvas.width - margin * 2 + 1, ctx.canvas.height - margin * 2 + 1);
     run(ctx, mode, margin, ival, w, h, +scale.value, +seed.value);
 };
 
