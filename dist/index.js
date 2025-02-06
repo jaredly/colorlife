@@ -295,11 +295,11 @@ const seedBoard = (board, w, h, seed) => {
 
 const newStall = () => ({ born: 0, died: 0, count: 0, bornt1: '', bornt2: '' });
 
-const run = (ctx, margin, ival, w, h, scale, seed) => {
+const run = (ctx, margin, ival, w, h, scale) => {
     let one = makeBoard(w, h);
     let two = makeBoard(w, h);
 
-    seedBoard(one, w, h, seed);
+    seedBoard(one, w, h, +seed.value);
     // const t = w * h * seed;
     // for (let i = 0; i < t; i++) {
     //     const x = (Math.random() * w) | 0;
@@ -346,7 +346,7 @@ const run = (ctx, margin, ival, w, h, scale, seed) => {
             if (isStalled(change)) {
                 one = makeBoard(w, h);
                 two = makeBoard(w, h);
-                seedBoard(one, w, h, seed);
+                seedBoard(one, w, h, +seed.value);
                 stallcheck = newStall();
                 break;
             }
@@ -391,6 +391,9 @@ const mdrop = range('dropoff steps', 0, 200, 20);
 const dropMin = range('dropoff min', 0, 50, 10);
 const dropMax = range('dropoff max', 0, 50, 20);
 const multi = range('multi step', 1, 20, 1);
+const size = range('size', 200, 3000, 1000, 50);
+
+// const HEIGHT = 1000;
 
 const configs = { scale, mutateMin, mutateMax, speed, seed, mdrop, dropMin, dropMax, multi };
 
@@ -401,6 +404,9 @@ const runConfig = (save) => {
             configs[key].onchange();
         }
     });
+    // if (save.mode && modeButtons[save.mode]) {
+    //     modeButtons[save.mode].click();
+    // }
     go();
 };
 
@@ -427,14 +433,12 @@ const modes = {
 
 let mode = modes.triangles;
 
-const HEIGHT = 1000;
-
 const go = () => {
     clearInterval(ival);
 
-    const margin = 100;
-    const w = (((HEIGHT - margin * 2) / scale.value) * mode.xs) | 0;
-    const h = ((HEIGHT - margin * 2) / scale.value) | 0;
+    const margin = Math.min(100, +size.value / 10);
+    const w = (((+size.value - margin * 2) / scale.value) * mode.xs) | 0;
+    const h = ((+size.value - margin * 2) / scale.value) | 0;
     const FH = mode.h(h, +scale.value) + margin * 2;
     const FW = mode.w(w, +scale.value) + margin * 2;
     ctx.canvas.width = FW;
@@ -445,7 +449,7 @@ const go = () => {
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     // ctx.strokeStyle = 'white';
     // ctx.strokeRect(margin, margin, ctx.canvas.width - margin * 2 + 1, ctx.canvas.height - margin * 2 + 1);
-    run(ctx, margin, ival, w, h, +scale.value, +seed.value);
+    run(ctx, margin, ival, w, h, +scale.value);
 };
 
 const resizeIfNeeded = () => {};
@@ -454,14 +458,38 @@ ctx.canvas.onclick = () => go();
 
 go();
 
+const saver = document.createElement('canvas');
+saver.width = 250;
+saver.height = 250;
+// document.body.append(saver);
+// saver.style.visibility = 'hidden';
+
 const save = button('save', () => {
     const config = { id: Math.random().toString(32).slice(2) };
     Object.keys(configs).forEach((key) => {
         config[key] = +configs[key].value;
     });
-    saves.push(config);
-    const href = ctx.canvas.toDataURL();
+    // Object.keys(modeButtons).forEach((k) => {
+    //     if (modeButtons[k].disabled) {
+    //         config.mode = k;
+    //     }
+    // });
+
+    const sctx = saver.getContext('2d');
+
+    const cw = ctx.canvas.width;
+    const ch = ctx.canvas.height;
+    const scale = 250 / Math.max(ch, cw);
+    const x = cw < ch ? ((ch - cw) / 2) * scale : 0;
+    const y = ch < cw ? ((cw - ch) / 2) * scale : 0;
+
+    sctx.fillRect(0, 0, saver.width, saver.height);
+    sctx.drawImage(ctx.canvas, x, y, 250 - x * 2, 250 - y * 2);
+
+    const href = saver.toDataURL();
     localStorage[JSON.stringify(config)] = href;
+    saves.push({ config, href });
+
     saveSaves(saves);
     showSaves();
 });
@@ -496,20 +524,39 @@ Object.assign(savesNode.style, {
 });
 
 const key = 'colorlife:saves';
-const loadSaves = () => {
+const getSaveds = () => {
     const raw = localStorage[key];
-    return raw ? JSON.parse(raw) : [];
+    return raw ? JSON.parse(raw).map((config) => ({ config, href: localStorage[JSON.stringify(config)] })) : [];
 };
-const saveSaves = (saves) => (localStorage[key] = JSON.stringify(saves));
+const saveSaves = (saves) => {
+    localStorage[key] = JSON.stringify(saves.map((c) => c.config));
+    saves.forEach(({ config, href }) => {
+        const k = JSON.stringify(config);
+        if (!localStorage[k]) {
+            localStorage[k] = href;
+        }
+    });
+};
 
 /** @type {Array<Record<string, number>>} */
-let saves = loadSaves();
+let saves = getSaveds();
+
+window.loadSaves = (data) => {
+    saves = data;
+    showSaves();
+};
+
+if (!localStorage[key]) {
+    const script = document.createElement('script');
+    script.src = './saves.js';
+    document.body.append(script);
+}
 
 const showSaves = () => {
     savesNode.innerHTML = '';
     savesNode.style.display = 'flex';
-    saves.forEach((save) => {
-        const href = localStorage[JSON.stringify(save)];
+    saves.forEach(({ config, href }) => {
+        // const href = localStorage[JSON.stringify(save)];
         const node = document.createElement('div');
         const img = document.createElement('img');
         img.src = href;
@@ -520,11 +567,42 @@ const showSaves = () => {
         Object.assign(text.style, {
             whiteSpace: 'pre',
         });
-        text.textContent = JSON.stringify(save);
+        text.textContent = JSON.stringify(config);
         node.onclick = () => {
-            runConfig(save);
+            runConfig(config);
         };
         savesNode.append(node);
     });
 };
 showSaves();
+
+const after = document.createElement('div');
+document.body.append(after);
+
+const sl = button('Save Saves as Saves js', () => {
+    const blob = new Blob([`loadSaves(${JSON.stringify(saves.map((config) => ({ config, href: localStorage[JSON.stringify(config)] })))});`], {
+        type: 'text/javascript',
+    });
+    const a = document.createElement('a');
+    a.download = `saves.js`;
+    a.href = URL.createObjectURL(blob);
+    document.body.append(a);
+    a.click();
+    a.remove();
+});
+after.append(sl);
+
+after.append(
+    button('Clear Saves', () => {
+        if (!localStorage[key]) {
+            localStorage[key] = '[]';
+        } else {
+            localStorage.removeItem(key);
+            saves.forEach(({ config }) => {
+                localStorage.removeItem(JSON.stringify(config));
+            });
+        }
+        saves = [];
+        showSaves();
+    }),
+);
