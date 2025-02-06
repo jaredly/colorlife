@@ -130,7 +130,7 @@ const liveness = (self, count) => {
     return count === 3 || (self && count == 2);
 };
 
-const conway = {
+const squares = {
     xs: 1,
     w: (w, scale) => w * scale,
     h: (h, scale) => scale * h,
@@ -153,6 +153,17 @@ const makeBoard = (w, h) => {
 };
 
 const draw = (ctx, mode, margin, cells, scale, w, h, mdrop) => {
+    const FH = mode.h(h, scale) + margin * 2;
+    const FW = mode.w(w, scale) + margin * 2;
+    if (FW !== ctx.canvas.width || FH !== ctx.canvas.height) {
+        ctx.canvas.width = FW;
+        ctx.canvas.height = FH;
+        ctx.canvas.style.width = ctx.canvas.width / 2 + 'px';
+        ctx.canvas.style.height = ctx.canvas.height / 2 + 'px';
+    }
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
     ctx.save();
     ctx.translate(margin, margin);
     // ctx.scale(0.5, 0.5);
@@ -162,10 +173,9 @@ const draw = (ctx, mode, margin, cells, scale, w, h, mdrop) => {
             if (v.drop === -1) {
                 ctx.fillStyle = `black`;
             } else if (v.life !== 1) {
-                // const mdrop = 20;
                 const dmin = +dropMin.value;
                 const dmax = +dropMax.value;
-                const light = (1 - Math.min(mdrop, v.drop) / mdrop) * (dmax - dmin) + dmin;
+                const light = mdrop === 0 ? 0 : (1 - Math.min(mdrop, v.drop) / mdrop) * (dmax - dmin) + dmin;
                 ctx.fillStyle = `hsl(${v.hue.toFixed(2)},100%,${light.toFixed(2)}%)`;
             } else {
                 ctx.fillStyle = `hsl(${v.hue.toFixed(2)},100%,50%)`;
@@ -186,7 +196,7 @@ const getMut = (min, max) => {
 };
 
 /** @type {(board: {life: number, hue: number}[][], x: number, y: number) => {life: number, hue: number}} */
-const neighbors = (mode, board, x, y, w, h, mutateMin, mutateMax) => {
+const neighbors = (mode, board, x, y, w, h, mutateMin, mutateMax, change) => {
     let count = 0;
     let hues = [];
     mode.neighborCells(board, x, y, w, h).forEach((cell) => {
@@ -198,11 +208,16 @@ const neighbors = (mode, board, x, y, w, h, mutateMin, mutateMax) => {
     const cell = board[y][x];
     const live = mode.liveness(cell.life, count);
     if (!live) {
+        if (cell.life) change.died++;
         return { hue: cell.hue, life: 0, drop: cell.drop === -1 ? -1 : cell.drop + 1 };
     }
     if (cell.life) {
         return cell; // stable
     }
+    if (change.bornt === '') {
+        change.bornt = `${x},${y}`;
+    }
+    change.born++;
     const hue = hueverage(hues, (getMut(mutateMin, mutateMax) / 180) * Math.PI);
     return { life: 1, hue: hue, drop: 0 };
 };
@@ -220,10 +235,10 @@ const hueverage = (hues, extra = 0) => {
     return (back * 180) / Math.PI;
 };
 
-const step = (mode, one, two, w, h, mutateMin, mutateMax) => {
+const step = (mode, one, two, w, h, mutateMin, mutateMax, change) => {
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-            two[y][x] = neighbors(mode, one, x, y, w, h, mutateMin, mutateMax);
+            two[y][x] = neighbors(mode, one, x, y, w, h, mutateMin, mutateMax, change);
         }
     }
 };
@@ -258,23 +273,86 @@ const range = (name, min, max, value, step = 1) => {
     return node;
 };
 
-const run = (ctx, mode, margin, ival, w, h, scale, seed) => {
-    let one = makeBoard(w, h);
-    let two = makeBoard(w, h);
-
+const seedBoard = (board, w, h, seed) => {
     const t = w * h * seed;
     for (let i = 0; i < t; i++) {
         const x = (Math.random() * w) | 0;
         const y = (Math.random() * h) | 0;
-        one[y][x].life = 1;
+        board[y][x].life = 1;
     }
+    // for (let y = 0; y < h; y++) {
+    //     for (let x = 0; x < w; x++) {
+    //         board[y][x] = { hue: (360 / w) * x, life: 0, drop: 0 };
+    //     }
+    // }
+    // const on = { drop: 0, life: 1, hue: 1 };
+    // board[5][5] = { ...on };
+    // board[5][6] = { ...on };
+    // board[5][7] = { ...on };
+    // board[6][7] = { ...on };
+    // board[7][6] = { ...on };
+};
+
+const newStall = () => ({ born: 0, died: 0, count: 0, bornt1: '', bornt2: '' });
+
+const run = (ctx, margin, ival, w, h, scale, seed) => {
+    let one = makeBoard(w, h);
+    let two = makeBoard(w, h);
+
+    seedBoard(one, w, h, seed);
+    // const t = w * h * seed;
+    // for (let i = 0; i < t; i++) {
+    //     const x = (Math.random() * w) | 0;
+    //     const y = (Math.random() * h) | 0;
+    //     one[y][x].life = 1;
+    // }
     draw(ctx, mode, margin, one, scale, w, h, +mdrop.value);
+
+    let stallcheck = newStall();
+
+    /**
+     * Difference means:
+     * - birth / death check is stalled
+     * - 'first birth'
+     */
+    const birthDeathCheck = (change) => {
+        return (
+            (stallcheck.born !== change.born || stallcheck.died !== change.died) &&
+            !(stallcheck.died === change.born && stallcheck.born == change.died)
+        );
+    };
+
+    const firstBirthCheck = (change) => {
+        return change.bornt !== stallcheck.bornt1 && change.bornt !== stallcheck.bornt2;
+    };
+
+    // hmm it can go every other.
+    const isStalled = (change) => {
+        if (birthDeathCheck(change) || firstBirthCheck(change)) {
+            stallcheck = { ...change, count: 0, bornt1: change.bornt, bornt2: stallcheck.bornt1 };
+            return false;
+        }
+        stallcheck.bornt2 = stallcheck.bornt1;
+        stallcheck.bornt1 = change.bornt;
+        stallcheck.count++;
+        return stallcheck.count >= 15;
+    };
 
     const tick = () => {
         for (let i = 0; i < +multi.value; i++) {
-            step(mode, one, two, w, h, mutateMin.value, mutateMax.value);
+            const change = { born: 0, died: 0, bornt: '' };
+            step(mode, one, two, w, h, mutateMin.value, mutateMax.value, change);
             [one, two] = [two, one];
+            if (isStalled(change)) {
+                one = makeBoard(w, h);
+                two = makeBoard(w, h);
+                seedBoard(one, w, h, seed);
+                stallcheck = newStall();
+                break;
+            }
         }
+        // For Debugging:
+        // scl.textContent = `Stalled ${stallcheck.born} ${stallcheck.died} ${stallcheck.count} ${stallcheck.bornt1} ${stallcheck.bornt2}`;
         draw(ctx, mode, margin, one, scale, w, h, +mdrop.value);
     };
 
@@ -304,7 +382,7 @@ const button = (name, onclick) => {
     return node;
 };
 
-const scale = range('scale', 1, 80, 80);
+const scale = range('scale', 1, 80, 40);
 const mutateMin = range('mutate min', 0, 360, 0);
 const mutateMax = range('mutate max', 0, 360, 30);
 const speed = range('speed', 30, 300, 30);
@@ -339,7 +417,7 @@ const pause = button('pause', () => {
 const ival = { current: null };
 
 const modes = {
-    conway,
+    squares,
     triangles: tris(false),
     trianglesFlip: tris(false, true),
     trianglesOff: tris(true),
@@ -367,8 +445,10 @@ const go = () => {
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     // ctx.strokeStyle = 'white';
     // ctx.strokeRect(margin, margin, ctx.canvas.width - margin * 2 + 1, ctx.canvas.height - margin * 2 + 1);
-    run(ctx, mode, margin, ival, w, h, +scale.value, +seed.value);
+    run(ctx, margin, ival, w, h, +scale.value, +seed.value);
 };
+
+const resizeIfNeeded = () => {};
 
 ctx.canvas.onclick = () => go();
 
@@ -386,11 +466,24 @@ const save = button('save', () => {
     showSaves();
 });
 
+const modeButtons = {};
 Object.keys(modes).forEach((key) => {
-    button(key, () => {
+    modeButtons[key] = button(key, () => {
         mode = modes[key];
+        modeButtons[key].disabled = true;
+        Object.keys(modeButtons).forEach((k) => {
+            if (k !== key) {
+                modeButtons[k].disabled = false;
+            }
+        });
     });
+    if (modes[key] === mode) {
+        modeButtons[key].disabled = true;
+    }
 });
+
+const scl = document.createElement('div');
+document.body.append(scl);
 
 const savesNode = document.createElement('div');
 document.body.append(savesNode);
