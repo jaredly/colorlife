@@ -1,4 +1,14 @@
-/** @type {CanvasRenderingContext2D} */
+const tops = document.createElement('div');
+document.body.append(tops);
+Object.assign(tops.style, {
+    display: 'flex',
+    flexWrap: 'wrap',
+});
+
+const canvas = document.createElement('canvas');
+tops.append(canvas);
+canvas.style.marginRight = '12px';
+// <canvas id="canvas" width="1000" height="1000" style="width: 500px; height: 500px; border: 5px solid black"></canvas>
 const ctx = canvas.getContext('2d');
 const sq3 = 2 / Math.sqrt(3);
 
@@ -160,9 +170,9 @@ const draw = (ctx, mode, margin, cells, scale, w, h, mdrop) => {
         ctx.canvas.height = FH;
         ctx.canvas.style.width = ctx.canvas.width / 2 + 'px';
         ctx.canvas.style.height = ctx.canvas.height / 2 + 'px';
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     }
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
     ctx.save();
     ctx.translate(margin, margin);
@@ -243,6 +253,8 @@ const step = (mode, one, two, w, h, mutateMin, mutateMax, change) => {
     }
 };
 
+let parent = document.body;
+
 const input = (name, placeholder) => {
     const node = document.createElement('input');
     node.type = 'text';
@@ -250,7 +262,7 @@ const input = (name, placeholder) => {
     const outer = document.createElement('div');
     outer.textContent = name;
     outer.append(node);
-    document.body.append(outer);
+    parent.append(outer);
     return node;
 };
 
@@ -269,7 +281,7 @@ const range = (name, min, max, value, step = 1) => {
     node.oninput = () => (show.textContent = node.value);
     node.onchange = () => (show.textContent = node.value);
     outer.append(show);
-    document.body.append(outer);
+    parent.append(outer);
     return node;
 };
 
@@ -300,12 +312,6 @@ const run = (ctx, margin, ival, w, h, scale) => {
     let two = makeBoard(w, h);
 
     seedBoard(one, w, h, +seed.value);
-    // const t = w * h * seed;
-    // for (let i = 0; i < t; i++) {
-    //     const x = (Math.random() * w) | 0;
-    //     const y = (Math.random() * h) | 0;
-    //     one[y][x].life = 1;
-    // }
     draw(ctx, mode, margin, one, scale, w, h, +mdrop.value);
 
     let stallcheck = newStall();
@@ -378,49 +384,37 @@ const button = (name, onclick) => {
     node.textContent = name;
     node.onclick = onclick;
     node.style.marginRight = '10px';
-    document.body.append(node);
+    parent.append(node);
     return node;
 };
 
-const scale = range('scale', 1, 80, 40);
-const mutateMin = range('mutate min', 0, 360, 0);
-const mutateMax = range('mutate max', 0, 360, 30);
-const speed = range('speed', 30, 300, 30);
-const seed = range('seed', 0, 1, 0.3, 0.01);
-const mdrop = range('dropoff steps', 0, 200, 20);
-const dropMin = range('dropoff min', 0, 50, 10);
-const dropMax = range('dropoff max', 0, 50, 20);
-const multi = range('multi step', 1, 20, 1);
-const size = range('size', 200, 3000, 1000, 50);
+const config = document.createElement('div');
+parent = config;
+tops.append(config);
 
-// const HEIGHT = 1000;
+const scale = range('Scale', 1, 80, 40);
+const size = range('Size', 200, 3000, 1000, 50);
 
-const configs = { scale, mutateMin, mutateMax, speed, seed, mdrop, dropMin, dropMax, multi };
-
-const runConfig = (save) => {
-    Object.keys(configs).forEach((key) => {
-        if (save[key] != null) {
-            configs[key].value = save[key];
-            configs[key].onchange();
-        }
-    });
-    // if (save.mode && modeButtons[save.mode]) {
-    //     modeButtons[save.mode].click();
-    // }
+const apply = button('Apply', () => {
     go();
-};
-
-const stepper = button('Step');
-const pause = button('pause', () => {
-    if (ival.current == null) {
-        ival.current = setInterval(() => stepper.onclick(), speed.value);
-    } else {
-        clearInterval(ival.current);
-        ival.current = null;
-    }
+    apply.disabled = true;
 });
+apply.style.marginTop = '8px';
+apply.disabled = true;
 
-const ival = { current: null };
+parent.append(document.createElement('hr'));
+
+scale.oninput = () => (apply.disabled = false);
+size.oninput = () => (apply.disabled = false);
+
+const mutateMin = range('Hue Mutation (min)', 0, 360, 0);
+const mutateMax = range('Hue Mutation (max)', 0, 360, 30);
+const speed = range('Step Speed (ms)', 30, 300, 30);
+const seed = range('Initial Saturation', 0, 1, 0.3, 0.01);
+const mdrop = range('Dropoff steps', 0, 200, 20);
+const dropMin = range('Dropoff lightness (min)', 0, 50, 10);
+const dropMax = range('Dropoff lightness (max)', 0, 50, 20);
+const multi = range('Multi-step', 1, 20, 1);
 
 const modes = {
     squares,
@@ -431,7 +425,71 @@ const modes = {
     hexagons: hexagons(),
 };
 
+const modeNames = {
+    squares: 'Standard',
+    triangles: 'Offset Triangles',
+    trianglesFlip: 'Triangles',
+    trianglesOff: 'Stacked Triangles',
+    circles: 'Circles',
+    hexagons: 'Hexagons',
+};
+
 let mode = modes.triangles;
+
+parent.append(document.createElement('hr'));
+
+const modeButtons = {};
+Object.keys(modes).forEach((key) => {
+    modeButtons[key] = button(modeNames[key], () => {
+        mode = modes[key];
+        modeButtons[key].disabled = true;
+        Object.keys(modeButtons).forEach((k) => {
+            if (k !== key) {
+                modeButtons[k].disabled = false;
+            }
+        });
+        apply.disabled = false;
+    });
+    if (modes[key] === mode) {
+        modeButtons[key].disabled = true;
+    }
+});
+parent.append(document.createElement('hr'));
+// const HEIGHT = 1000;
+
+const configs = { size, scale, mutateMin, mutateMax, speed, seed, mdrop, dropMin, dropMax, multi };
+
+const runConfig = (save) => {
+    Object.keys(configs).forEach((key) => {
+        if (save[key] != null) {
+            configs[key].value = save[key];
+            configs[key].onchange();
+        }
+    });
+    console.log('running', save);
+    if (save.mode && modes[save.mode]) {
+        mode = modes[save.mode];
+        Object.keys(modeButtons).forEach((k) => {
+            modeButtons[k].disabled = k === save.mode;
+        });
+    }
+    go();
+};
+
+const stepper = button('Step');
+const pause = button('Pause', () => {
+    if (ival.current == null) {
+        ival.current = setInterval(() => stepper.onclick(), speed.value);
+        pause.textContent = 'Pause';
+    } else {
+        clearInterval(ival.current);
+        ival.current = null;
+        pause.textContent = 'Play';
+    }
+});
+parent.append(document.createElement('hr'));
+
+const ival = { current: null };
 
 const go = () => {
     clearInterval(ival);
@@ -464,16 +522,16 @@ saver.height = 250;
 // document.body.append(saver);
 // saver.style.visibility = 'hidden';
 
-const save = button('save', () => {
+const save = button('Save Configuration', () => {
     const config = { id: Math.random().toString(32).slice(2) };
     Object.keys(configs).forEach((key) => {
         config[key] = +configs[key].value;
     });
-    // Object.keys(modeButtons).forEach((k) => {
-    //     if (modeButtons[k].disabled) {
-    //         config.mode = k;
-    //     }
-    // });
+    Object.keys(modeButtons).forEach((k) => {
+        if (modeButtons[k].disabled) {
+            config.mode = k;
+        }
+    });
 
     const sctx = saver.getContext('2d');
 
@@ -494,21 +552,7 @@ const save = button('save', () => {
     showSaves();
 });
 
-const modeButtons = {};
-Object.keys(modes).forEach((key) => {
-    modeButtons[key] = button(key, () => {
-        mode = modes[key];
-        modeButtons[key].disabled = true;
-        Object.keys(modeButtons).forEach((k) => {
-            if (k !== key) {
-                modeButtons[k].disabled = false;
-            }
-        });
-    });
-    if (modes[key] === mode) {
-        modeButtons[key].disabled = true;
-    }
-});
+parent = document.body;
 
 const scl = document.createElement('div');
 document.body.append(scl);
@@ -555,22 +599,46 @@ if (!localStorage[key]) {
 const showSaves = () => {
     savesNode.innerHTML = '';
     savesNode.style.display = 'flex';
-    saves.forEach(({ config, href }) => {
-        // const href = localStorage[JSON.stringify(save)];
+    saves.forEach((save) => {
+        const { config, href } = save;
         const node = document.createElement('div');
+        node.style.position = 'relative';
         const img = document.createElement('img');
         img.src = href;
         img.style.width = '250px';
         img.style.height = '250px';
+        img.style.cursor = 'pointer';
         node.append(img);
         const text = document.createElement('div');
         Object.assign(text.style, {
             whiteSpace: 'pre',
         });
         text.textContent = JSON.stringify(config);
-        node.onclick = () => {
+        img.onclick = () => {
             runConfig(config);
         };
+        const rm = document.createElement('button');
+        rm.onclick = () => {
+            const at = saves.indexOf(save);
+            if (at !== -1) {
+                saves.splice(at, 1);
+                saveSaves(saves);
+                showSaves();
+            }
+        };
+        rm.innerHTML = '&times;';
+        rm.onmouseover = () => (rm.style.background = 'pink');
+        rm.onmouseleave = () => (rm.style.background = 'none');
+        Object.assign(rm.style, {
+            position: 'absolute',
+            top: '0',
+            right: '0',
+            cursor: 'pointer',
+            color: 'red',
+            background: 'none',
+            border: 'none',
+        });
+        node.append(rm);
         savesNode.append(node);
     });
 };
@@ -578,9 +646,10 @@ showSaves();
 
 const after = document.createElement('div');
 document.body.append(after);
+after.style.marginTop = '12px';
 
-const sl = button('Save Saves as Saves js', () => {
-    const blob = new Blob([`loadSaves(${JSON.stringify(saves.map((config) => ({ config, href: localStorage[JSON.stringify(config)] })))});`], {
+const sl = button('Export Saves', () => {
+    const blob = new Blob([`loadSaves(${JSON.stringify(saves)});`], {
         type: 'text/javascript',
     });
     const a = document.createElement('a');
